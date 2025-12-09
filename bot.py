@@ -1,10 +1,18 @@
-import io
+import os
 import fitz
 import pytesseract
 from PIL import Image
 from deep_translator import GoogleTranslator
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-translator = GoogleTranslator(source="en", target="ar")
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+translator = GoogleTranslator(source='en', target='ar')
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Send me a PDF and I'll translate it (English → Arabic).")
 
 async def handle_pdf(update, context):
     await update.message.reply_text("Processing PDF...")
@@ -25,14 +33,13 @@ async def handle_pdf(update, context):
             xref = img[0]
             base_img = pdf.extract_image(xref)
             img_bytes = base_img["image"]
+
             pil_img = Image.open(io.BytesIO(img_bytes))
             ocr_text += pytesseract.image_to_string(pil_img, lang="eng") + "\n"
-
         full_english = (text + "\n" + ocr_text).strip()
 
         if not full_english:
             full_english = "(No text found)"
-
         arabic = translator.translate(full_english)
         new_page = pdf.new_page(i + 1)
 
@@ -45,7 +52,6 @@ async def handle_pdf(update, context):
     pdf.close()
 
     await update.message.reply_document(document=open(output_path, "rb"))
-
 
 async def main():
     app = Application.builder().token(TOKEN).build()
