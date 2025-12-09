@@ -1,13 +1,30 @@
+import os
 import io
 import fitz
 import pytesseract
 from PIL import Image
 from deep_translator import GoogleTranslator
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 translator = GoogleTranslator(source="en", target="ar")
-#Uhm hi
-async def handle_pdf(update, context):
-    await update.message.reply_text("Processing PDF...")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Send me a PDF and I will translate each page from English → Arabic.\n\n"
+        "Supports normal text + scanned text inside images."
+    )
+
+async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Processing your PDF... ⏳")
 
     tg_file = await update.message.document.get_file()
     input_path = "input.pdf"
@@ -25,18 +42,20 @@ async def handle_pdf(update, context):
             xref = img[0]
             base_img = pdf.extract_image(xref)
             img_bytes = base_img["image"]
+
             pil_img = Image.open(io.BytesIO(img_bytes))
             ocr_text += pytesseract.image_to_string(pil_img, lang="eng") + "\n"
-
         full_english = (text + "\n" + ocr_text).strip()
 
         if not full_english:
-            full_english = "(No text found)"
-
+            full_english = "(No English text found)"
         arabic = translator.translate(full_english)
         new_page = pdf.new_page(i + 1)
 
-        content = f"--- Original English ---\n{full_english}\n\n--- Arabic Translation ---\n{arabic}"
+        content = (
+            f"--- Original English ---\n{full_english}\n\n"
+            f"--- Arabic Translation ---\n{arabic}"
+        )
 
         new_page.insert_text((40, 40), content, fontsize=12)
 
@@ -46,17 +65,20 @@ async def handle_pdf(update, context):
 
     await update.message.reply_document(document=open(output_path, "rb"))
 
-
 async def main():
-    app = Application.builder().token(TOKEN).build()
+    if not TOKEN:
+        raise ValueError("ERROR: BOT_TOKEN environment variable is missing!")
 
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
+    port = int(os.getenv("PORT", 8080))
+
     await app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.getenv("PORT", 8080)),
+        port=port,
         url_path=TOKEN,
-        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}",
     )
 
 if __name__ == "__main__":
